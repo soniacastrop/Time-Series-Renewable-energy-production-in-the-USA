@@ -1,0 +1,775 @@
+---
+title: "Projecte Sèries Temporals"
+output: html_notebook
+---
+
+_Lucía De Pineda i Sonia Castro_
+
+# Produció d'energia renovable en USA
+
+```{r}
+library(MASS)
+library(tables)
+library(car)
+library(RcmdrMisc)
+library(methods)
+library(emmeans)
+```
+
+## a) Identificación
+
+#### Determina las transformaciones que hacen la serie estacionaria. Justifica con resultados gráficos y numéricos las transformaciones efectuadas.
+
+```{r}
+serie=ts(read.table("RenewUSA.dat", header=F),start=1990,freq=12)
+plot(serie,main="Producció de Energía renovable en USA")    
+abline(v=1990:2019,col=4,lty=3)
+```
+Mirant la gràfica podem dir que la producció d'energia renovable va ser estable del 1990 fins al 1995 on va començar a tenir un lleu creixement fins al 1997. Després observem un decreixement fins al 2002. I a partir d'aquell any fins al 2020 ha tingut un creixement bastant lineal.
+
+
+Observant la sèrie es pot deduir que la variancia no és constant. A més sembla haver-hi un patró estacional anual amb un mínim als messos d'estiu. 
+
+Volem transformar la sèrie en una sèrie estacionària, que sabem que no ho és ja que té components no estacionaris (per exemple el patró estacional). Verifiquem que no és estacionària mirant l'ACF de la sèrie.
+
+
+```{r}
+acf(serie,ylim=c(-1,1),lag.max=70)
+```
+Confirmem que la sèrie no és estacionària, ja que l'ACF decreix molt lentament i té unes correlacions molt altes, per tant significa que hi ha molta relació entre un període i el període anterior. Per tant hem d'aplicar transformacions.
+
+```{r}
+m <-apply(matrix(serie,nrow=12),2,mean)
+v <-apply(matrix(serie,nrow=12),2,var)
+plot(v~m, ylim=c(0,10000))
+```
+
+```{r}
+boxplot(matrix(serie,nrow=12))
+```
+
+Com podem observar la variancia no és constant, ja que al boxplot les caixes a diferents altures no tenen la mateixa amplada. Com que les caixes es reparteixen en un rang gran i les del mateix nivell són semblants podem aplicar el logarítme per igualar la variancia.
+
+```{r}
+lnserie=log(serie)
+plot(lnserie)
+```
+
+Ara busquem si té estacionalitat:
+```{r}
+monthplot(lnserie)
+```
+
+
+En aquest plot es veu l'evolució per mesos de cada any. Com ja havíem previst podem veure un patró estacional força clar. Es veu com en els mesos d'estiu hi ha un decreixement en tots els anys.
+
+Fem una diferenciació estacional per fer desaparèixer aquest patró estacional.
+
+```{r}
+d12lnserie<-diff(lnserie, lag=12)
+plot(d12lnserie)
+```
+Per últim, mirem si la mitjana és constant. Si ens fixem en el plot de la sèrie, sembla que la mitjana no és constant. Per tant, fem la diferenciació d'ordre 1 (diferenciació regular) per tenir la mitjana constant.
+
+```{r}
+d1d12lnserie=diff(d12lnserie) #és la diferenciacio d'ordre 1 de la serie l12lnserie
+plot(d1d12lnserie)
+```
+Aquesta serie sembla tenir la mitjana més constant. Mirem si amb aquesta diferenciació en tenim prou o si fent-ne una altre ens millora. Per fer-ho mirem les variances.
+```{r}
+d1d1d12lnserie=diff(d1d12lnserie) #és fer la dif regular de la dif regular de la dif estacional
+plot(d1d1d12lnserie)
+```
+
+```{r}
+var(d12lnserie)
+var(d1d12lnserie)
+var(d1d1d12lnserie)
+```
+
+Observem que amb una diferenciació regular ja n'hi ha prou, ja que amb la segona augmenta una mica la variància, així que hi ha una sobrediferenciació. 
+
+La sèrie que ens queda és:
+
+$ W_t = (1-B)(1-B^{12})log(X_t) $ 
+
+Equival a fer el logaritme de la sèrie, una diferenciació d'ordre 12 i una diferenciació d'ordre 1.
+
+```{r}
+acf(d1d12lnserie, ylim=c(-1, 1), lag.max=72)
+```
+L'Acf mostra que ara la sèrie ja és estacionaria, ja que els retards descendeixen ràpidament cap a l'interior de les bandes de confiança.
+
+#### Analiza el ACF y PACF de la serie para identificar como mínimo dos modelos posibles. Razona en que características de los gràficos te basas para identificar esos modelos.
+
+Representem l'ACF i la PACF per la sèrie transformada:
+
+```{r}
+par(mfrow=c(1,2))
+acf(d1d12lnserie,ylim=c(-1,1),lag.max=72,col=c(2,rep(1,11)),lwd=2)
+pacf(d1d12lnserie,ylim=c(-1,1),lag.max=72,col=c(rep(1,11),2),lwd=2)
+par(mfrow=c(1,1)) 
+```
+
+Mirem l'ACF i la PACF i traiem les conclusions següents:
+
+Per la part regular ens fixem en els primers retards i considerem els models AR(2) i MA(2).  AR(2) ja que en la PACF veiem els dos primers retards significatius i els altres els podem considerar nuls. I en l'ACF podem considerar que els retards que hi ha fora de les bandes de confiança són causa de l'aleatorietat i hi ha un decreixement, per tant hi ha infinits retards no nuls. En el cas del MA(2) passa el mateix, considerem que els dos retards significatius del PACF es produeixen per atzar i en l'ACF trobem un nombre finit de retards (en aquest cas 2).
+
+Per la part estacional ens fixem en els retards múltiples de 12 i arribem a la conclusió que podem considerar els models AR(3) i MA(1). AR(3) ja que en la PACF veiem tres retards significatius múltiples de l'estacionalitat i els altres els podem considerar nuls. I en l'ACF podem considerar que els dos retards que hi ha fora de les bandes de confiança són causa de l'aleatorietat i hi ha un decreixement, per tant hi ha infinits retards no nuls. En el cas del MA(1) passa el mateix, considerem que en el PACF hi ha un patró decreixement i tenim infinits retards no nuls i en l'ACF trobem un nombre finit de retards (el primer) i els altres són nuls.
+
+El primer model que provarem és un $ARIMA(2,1,0)(3,1,0)_{12}$, és a dir, AR$(2)$ per la part regular amb una diferenciació regular, i AR$(3)_{12}$ per la part estacional amb una diferenciació estacional de 12.
+
+El segon model és un $ARIMA(0,1,2)(0,1,1)_{12}$, és a dir, MA$(2)$ per la part regular amb una diferenciació regular, i MA$(1)_{12}$ per la part estacional amb una diferenciació estacional de 12.
+
+
+## b) Estimación
+
+#### Utiliza R para estimar dos de los modelos identificados.
+
+***Model 1:***
+$ARIMA(2,1,0)(3,1,0)_{12}$
+```{r}
+(mod1=arima(d1d12lnserie,order=c(2,0,0),seasonal=list(order=c(3,0,0),period=12)))
+```
+
+Primer, estimem el model amb la sèrie transformada en estacionària, d'aquesta manera obtenim una transformació de la mitjana. Veiem que la mitjana no és significativa, per tant tornarem a estimar el model per a la sèrie original, indicant les diferenciacions en el mètode d'estimació: 
+```{r}
+(mod1=arima(lnserie,order=c(2,1,0),seasonal=list(order=c(3,1,0),period=12)))
+```
+
+Ara verifiquem que tots els coeficients són significatius, ja que |$\frac{\hat{\mu}}{se_\mu}$| > 2. Per tant no en traiem cap.
+
+Ara estimem el segon model:
+**Model 2:** $ARIMA(0,1,2)(0,1,1)_{12}$
+```{r}
+(mod2=arima(d1d12lnserie,order=c(0,0,2),seasonal=list(order=c(0,0,1),period=12)))
+```
+
+Quan estimem el model per a la sèrie transformada veiem que la mitjana no és significativa, per tant ho tornem a fer per la sèrie original
+```{r}
+(mod2=arima(lnserie,order=c(0,1,2),seasonal=list(order=c(0,1,1),period=12)))
+```
+
+Comprovem que tots els coeficients són significatius i per tant no hem d'eliminar cap.
+
+## c) Validación
+
+#### Realiza el Análisis de Residuos completo, justificando las premisas a partir de los resultados gráficos correspondientes.
+
+***Model 1:*** $ARIMA(2,1,0)(3,1,0)_{12}$
+```{r}
+resi1=resid(mod1)
+```
+
+El primer que mirem és si la variància és constant.
+
+Plot dels residus:
+```{r}
+plot(resi1)
+abline(h=0)
+abline(h=c(-3*sd(resi1),3*sd(resi1)),lty=3,col=4)
+```
+
+Marquem les línies de referència i veiem com pràcticament tots els residus es troben dins d'aquest interval. El 99.7% dels residus hauria de trobar-se dins de l'interval, cosa que podem acceptar que passa en la nostra sèrie. Els valors que sobresurten podrien ser una indicació d'atípics.
+
+Plot de l’arrel quadrada del valor absolut dels residus amb ajust suau:
+```{r}
+scatter.smooth(sqrt(abs(resi1)), lpars=list(col=2))
+```
+
+Amb aquest plot veiem l'evolució de l'estimació de la variança. Com la línia és aproximadament horitzontal, considerem que la variància si que és constant.
+
+Ara mirem si podem considerar que els residus provenen d'una distribució normal.
+
+Plot de Normalitat:
+```{r}
+qqnorm(resi1)
+qqline(resi1,col=2,lwd=2)
+```
+
+Histograma amb la corba normal superposada:
+```{r}
+hist(resi1,breaks=20, freq=FALSE)
+curve(dnorm(x, mean=mean(resi1), sd=sd(resi1)), col=2, add=T)
+```
+
+Test de Shapiro-Wilks, on la hipòtesi nul·la és que els residus segueixen una distribució normal:
+```{r}
+shapiro.test(resi1)
+```
+
+Amb totes aquestes dades concluïm que els residus si que provenen d'una distribució normal. En el plot de normalitat observem com les dades s'ajusten bastant a la línia de normalitat. Només es desvien una mica les cues, el qual pot ser degut a atípics. En l'histograma no sembla que s'ajusti molt bé a la corba de normalitat, però, amb el test de normalitat de Shapiro-Wilks confirmem que els residus si que presenten normalitat, ja que el p-valor és major que 0.05, per tant acceptem la hipòtesi de normalitat. 
+
+A continuació, volem saber si podem considerar que els residus són independents.
+
+Primer representem l'ACF i la PACF dels residus:
+```{r}
+par(mfrow=c(1,2))
+acf(resi1,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)),lwd=2)
+pacf(resi1,ylim=c(-1,1),lag.max=60,col=c(rep(1,11),2),lwd=2)
+par(mfrow=c(1,1))
+```
+
+Amb l'ACF i la PACF sembla que els residus no són independents, ja que hi ha una quantitat important de residus que es sobresurten de les bandes de confiança.
+
+Per confirmar-ho, fem el test de Ljung-Box i representem els p-valors:
+```{r}
+tsdiag(mod1,gof.lag=72)
+```
+
+Quan fem el test de Ljung-Box veiem com hi ha molts residus per sota del 0.05, per tant no podem considerar que els residus siguin independents (soroll blanc).
+
+En resum, pel primer model considerem que els residus tenen variància constant i provenen d'una distribució normal, però no són independents.
+
+**Model 2:** $ARIMA(0,1,2)(0,1,1)_{12}$
+```{r}
+resi2=resid(mod2)
+```
+
+El primer que mirem és si la variància és constant.
+
+Plot dels residus:
+```{r}
+plot(resi2)
+abline(h=0)
+abline(h=c(-3*sd(resi2),3*sd(resi2)),lty=3,col=4)
+```
+
+En aquest primer gràfic veiem com els valors dels residus es troben dins de les bandes de confiança. Hi ha tres valors que sobresurten però considerem que són atípics causats per l'aleatorietat.
+
+Plot de l’arrel quadrada del valor absolut dels residus amb ajust suau:
+```{r}
+scatter.smooth(sqrt(abs(resi2)), lpars=list(col=2))
+```
+
+Amb aquest plot veiem l'evolució de l'estimació de la variança. Com la línia és aproximadament horitzontal, considerem que la variància si que és constant.
+
+Ara mirem si podem considerar que els residus provenen d'una distribució normal.
+
+Plot de Normalitat:
+```{r}
+qqnorm(resi2)
+qqline(resi2,col=2,lwd=2)
+```
+
+Histograma amb la corba normal superposada:
+```{r}
+hist(resi2,breaks=20, freq=FALSE)
+curve(dnorm(x, mean=mean(resi2), sd=sd(resi2)), col=2, add=T)
+```
+
+Test de Shapiro-Wilks, on la hipòtesi nul·la és que els residus segueixen una distribució normal:
+```{r}
+shapiro.test(resi2)
+```
+
+Amb aquestes dades concluïm que els residus si que provenen d'una distribució normal. En el plot de normalitat veiem com les dades s'ajusten bastant a la línia de normalitat. Només es desvien una mica les cues, el qual pot ser degut a atípics. L'histograma s'ajusta més o menys a la corba de normalitat. I amb el test de normalitat de Shapiro-Wilks podem confirmar que els residus si que presenten normalitat, ja que el p-valor és major que 0.05, per tant acceptem la hipòtesi de normalitat. 
+
+Per últim, volem saber si els residus són independents.
+
+Primer representem l'ACF i la PACF dels residus:
+```{r}
+par(mfrow=c(1,2))
+acf(resi2,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)),lwd=2)
+pacf(resi2,ylim=c(-1,1),lag.max=60,col=c(rep(1,11),2),lwd=2)
+par(mfrow=c(1,1))
+```
+
+Amb l'ACF i la PACF sembla que els residus no són independents, ja que hi ha una quantitat significant de residus que es sobresurten de les bandes de confiança.
+
+Per confirmar-ho, fem el test de Ljung-Box i representem els p-valors:
+```{r}
+tsdiag(mod2,gof.lag=72)
+```
+
+Quan fem el test de Ljung-Box veiem com hi ha molts residus per sota del 0.05, per tant no podem considerar que els residus siguin independents (soroll blanc).
+
+En resum, pel segon model concluïm que els residus tenen variància constant i provenen d'una distribució normal, però no són independents, igual que en el model 1.
+
+#### Incluye datos de las expresiones de los modelos como AR y MA infinitos, si son estacionarios y/o invertibles y medidas de adecuación a los datos.
+
+**Model 1:** $ARIMA(2,1,0)(3,1,0)_{12}$
+
+Primer, busquem l'expressió del model com AR i MA infinits:
+```{r}
+
+```
+
+
+Ara volem veure si és estacionari i/o invertible busquem les arrels dels polinomis característics:
+```{r}
+Mod(polyroot(c(1,-mod1$model$phi))) # part AR
+Mod(polyroot(c(1,mod1$model$theta))) # part MA
+```
+
+Com totes les arrels del polinomi característic de la part AR són majors que 1, sabem que el model és estacionari (causal). En el cas de la part MA, les arrels no són majors que 1, per tant el model no és invertible.
+
+Finalment calculem les mesures d'adequació a les dades (AIC i BIC:
+```{r}
+AIC(mod1)
+BIC(mod1)
+```
+
+
+**Model 2:** $ARIMA(0,1,2)(0,1,1)_{12}$
+
+Primer, busquem l'expressió del model com AR i MA infinits:
+```{r}
+
+```
+
+
+Ara volem veure si és estacionari i/o invertible busquem les arrels dels polinomis característics:
+```{r}
+Mod(polyroot(c(1,-mod2$model$phi))) # part AR
+Mod(polyroot(c(1,mod2$model$theta))) # part MA
+```
+
+Com totes les arrels del polinomi característic de la part MA són majors que 1, sabem que el model és invertible. En el cas de la part AR, les arrels no són majors que 1, per tant el model no és estacionari (causal).
+
+Finalment calculem les mesures d'adequació a les dades (AIC i BIC:
+```{r}
+AIC(mod2)
+BIC(mod2)
+```
+
+
+#### Verifica la estabilidad del modelo y evalúa su capacidad de previsión, reservando las últimas 12 observaciones.
+
+**Model 1:** $ARIMA(2,1,0)(3,1,0)_{12}$
+
+Ajustem el model sense les últimes 12 observacions per veure si és estable.
+```{r}
+ultim=c(2017,12)
+lnserieb=window(lnserie, end=ultim)
+(mod1)
+(mod1b=arima(lnserieb,order=c(2,1,0),seasonal=list(order=c(3,1,0),period=12)))
+```
+
+El model és estable ja que la magnitud, el signe i la significació dels coeficients es manté constant, encara que eliminem un període.
+
+Pel model ajustat sense les últimes 12 observacions, obtenim les prediccions puntuals i l'interval de confiança al 95% per a l'últim any.
+```{r}
+pr1<-predict(mod1b, n.ahead=12) #prediccions puntuals
+pr1
+```
+
+Aquestes són les prediccions puntuals pels pròxims 12 mesos amb el seu error estàndar corresponent.
+
+Busquem els límits de l'interval de confiança de cada predicció puntual:
+```{r}
+inf<-pr1$pred-1.96*pr1$se #límit inferior
+sup<-pr1$pred+1.96*pr1$se #límit superior
+inf
+sup
+```
+
+Obtenim per cada mes quin és el límit inferior i superior de l'interval de confiança de la predicció.
+
+Ara representem la sèrie original (últims 5 anys) amb les prediccions i intervals superposats.
+```{r}
+p1 <- exp(pr1$pred) #prediccions puntuals
+tl1 <- exp(pr1$pred-1.96*pr1$se) #límit inferior
+tu1 <- exp(pr1$pred+1.96*pr1$se) #límit superior
+ts.plot(serie,tl1,tu1,p1,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(2014,2019), type="o")
+```
+
+En aquesta gràfica veiem com la capacitat de predicció del model presenta una petita desviació respecte les observacions reals. No és significadament dolenta, però s'allunya una mica del que hauria de ser.
+
+Per últim, per mesurar la capacacitat de predicció obtenim les mesures següents:
+```{r}
+lnseriec = window(lnserie, start=ultim)
+(RMSPE=sqrt(mean(((lnseriec - p1)/lnseriec)^2)))
+(MAPE=mean(abs(lnseriec - p1)/lnseriec))
+```
+
+Aquestes mesures ens donen una idea de l'exactitud de les precisions.
+
+Ara calculem la mitjana de les amplades dels intervals de confiança de predicció, amb això mesurem la precisió de les prediccions:
+```{r}
+mean(tu1-tl1)
+```
+
+
+**Model 2:** $ARIMA(0,1,2)(0,1,1)_{12}$
+
+Ajustem el model sense les últimes 12 observacions per veure si és estable.
+```{r}
+(mod2)
+(mod2b=arima(lnserieb,order=c(0,1,2),seasonal=list(order=c(0,1,1),period=12)))
+```
+
+El model és estable ja que la magnitud, el signe i la significació dels coeficients es manté constant, encara que eliminem un període.
+
+Pel model ajustat sense les últimes 12 observacions, obtenim les prediccions puntuals i l'interval de confiança al 95% per a l'últim any.
+```{r}
+pr2<-predict(mod2b, n.ahead=12) #prediccions puntuals
+pr2
+```
+
+Aquestes són les prediccions puntuals pels pròxims 12 mesos amb el seu error estàndar corresponent.
+
+Busquem els límits de l'interval de confiança de cada predicció puntual:
+```{r}
+inf<-pr2$pred-1.96*pr2$se #límit inferior
+sup<-pr2$pred+1.96*pr2$se #límit superior
+inf
+sup
+```
+
+Obtenim per cada mes quin és el límit inferior i superior de l'interval de confiança de la predicció.
+
+Ara representem la sèrie original (últims 5 anys) amb les prediccions i intervals superposats.
+```{r}
+p2 <- exp(pr2$pred) #prediccions puntuals
+tl2 <- exp(pr2$pred-1.96*pr2$se) #límit inferior
+tu2 <- exp(pr2$pred+1.96*pr2$se) #límit superior
+ts.plot(serie,tl2,tu2,p2,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(2014,2019), type="o")
+```
+
+Per aquest model, observem com les prediccions també es desvien una mica de les observacions reals. Encara així, la capacitat de predicció sembla força bona.
+
+Per últim, per mesurar la capacacitat de predicció obtenim les mesures següents:
+```{r}
+lnseriec = window(lnserie, start=ultim)
+(RMSPE=sqrt(mean(((lnseriec - p2)/lnseriec)^2)))
+(MAPE=mean(abs(lnseriec - p2)/lnseriec))
+```
+
+Aquestes mesures ens donen una idea de l'exactitud de les precisions.
+
+Ara calculem la mitjana de les amplades dels intervals de confiança de predicció, amb això mesurem la precisió de les prediccions:
+```{r}
+mean(tu2-tl2)
+```
+
+
+#### Selecciona el mejor modelo para realizar las previsiones.
+
+Tenint en compte les característiques dels dos models hem seleccionat el segon model, $ARIMA(0,1,2)(0,1,1)_{12}$, per realitzar les prediccions Per començar, mirem els residus i veiem com són molt similars pels dos models, ja que en els dos casos els considerem de variància constant, normals i no independents. Llavors ens fixem en que el primer model és estacionari i no invertible. Mentre que el segon model és invertible i no estacionari. Si ens fixem en l'AIC i el BIC, veiem com en el segon model l'AIC és menor, és a dir, que és el model preferible. En el cas del BIC, també és més petit el del model 2, ja que el BIC penalitza més l'ús de molts paràmetres (i el model 2 té menys). Les mesures d'exactitud MAPE i RMSPE són pràcticament iguals, per tant no afecten a la selecció. Per últim, ens fixem en les prediccions. El segon model té uns errors de predicció una mica més petits en general. A més a més, si mirem la gràfica amb la predicció i les bandes de confiança, sembla que el segon model s'ajusta més a les observacions reals. No hi ha molta diferència amb el primer model, però per totes aquestes raons escollim el model 2 per realitzar les prediccions.
+
+
+# d) Previsiones
+
+#### Obtén las previsiones a largo plazo para los doce meses posteriores a la última observación, con los correspondientes intervalos de confianza.
+
+Pel model escollit (model 2, $ARIMA(0,1,2)(0,1,1)_{12}$) ajustat amb totes les dades, calculem les previsions i els intervals de confiança pel proper any.
+```{r}
+pred<-predict(mod2, n.ahead=12)
+pred
+```
+
+Aquestes són les prediccions puntuals pels pròxims 12 mesos amb el seu error estàndar corresponent.
+
+Busquem els límits de l'interval de confiança de cada predicció puntual:
+```{r}
+inf<-pred$pred-1.96*pred$se #límit inferior
+sup<-pred$pred+1.96*pred$se #límit superior
+inf
+sup
+```
+
+Obtenim per cada mes quin és el límit inferior i superior de l'interval de confiança de la predicció.
+
+Per últim, representem la sèrie original amb les prediccions i intervals pel pròxim any.
+```{r}
+p3 <- exp(pred$pred) #prediccions puntuals
+tl3 <- exp(pred$pred-1.96*pred$se) #límit inferior
+tu3 <- exp(pred$pred+1.96*pred$se) #límit superior
+ts.plot(serie,tl3,tu3,p3,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(2015,2020), type="o")
+```
+
+# e) Tratamiento de Atípicos
+
+#### Para el último modelo seleccionado, aplica la detección automática de datos atípicos. Intenta la interpretación de los atípicos detectados.
+
+```{r}
+source("atipics2.r")
+(mod.atip=outdetec(mod2,dif=c(1,12),crit=2.9,LS=T))
+str(mod.atip)
+```
+En les 107, 94 i 205 troben AO(Additive Outlier) que per tant només afecta a una observació.En la 14 trobem TC (Transitori Change) que afecta a més d'una mostra però acaba recuperant el nivell que li tocava. En les mostres 113, 30, 26, 118, 66 i 148 trobem LS(Level Shifts) que afecten a més d'una mostra i on no s'acaba de recuperar el nivell que pertoca. 
+
+Els W_coeff ens diu en quina mesura afecten a la sèrie. A més si és negatiu indica que el valor és més baix del que hauria de ser i si és positiu més alt. El ABS_L_Ratio com més gran sigui vol dir que més impacte té. En aquest cas el que més impacte genera és el Level Shift de la mostra 133 amb un ABS_L_Ratio de 3.73125 i amb un W_coeff de -0.12754482 que indica que fa baixar de nivell.
+
+
+
+Si volem quantificar-ho podem fer l'exponencial de W_coeff i ens surt el percentatge de quant afecta.
+```{r}
+meses=c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dec")
+data.frame(atipics,Fecha=paste(meses[(atipics[,1]-1)%%12+1],start(lnserie)[1]+((atipics[,1]-1)%/%12)),Efecte=exp(atipics[,3])*100)
+```
+
+
+
+
+#### Una vez linealizada la serie, obtén las previsiones para la serie original mediante el modelo para la serie linealizada y compáralas con las obtenidas anteriormente.
+
+Linealitzem la sèrie:
+```{r}
+lnserie.lin=lineal(lnserie,mod.atip$atip)
+serie.lin=exp(lnserie.lin)
+```
+
+En aquest gràfic veiem en negre el logarítme de la sèrie original i en vermell el logaritme de la sèrie linealitzada.
+```{r}
+plot(exp(lnserie.lin),col=2)
+lines(serie)
+```
+
+En aquest plot podem observal els outliers corretgits al linearitzar la sèrie.
+```{r}
+plot(lnserie-lnserie.lin)
+```
+Mirem si la sèrie linealitzada necessita més transformacions per ser estacionària. Primer mirem si té estacionalitat:
+
+```{r}
+monthplot(lnserie.lin)
+```
+
+Observem un patró estacional amb uns augments als últims mesos de l'any. Per tant apliquem una diferenciació estacional.
+
+```{r}
+d12lnserie.lin<-diff(lnserie.lin, lag=12)
+plot(d12lnserie.lin)
+```
+Per últim, mirem si la mitjana és constant. Si ens fixem en el plot de la sèrie, sembla que la mitjana no és del tot constant. Per tant, fem la diferenciació d'ordre 1 (diferenciació regular) per tenir la mitjana constant.
+
+```{r}
+d1d12lnserie.lin=diff(d12lnserie.lin) #és la diferenciacio d'ordre 1 de la serie l12lnserie
+plot(d1d12lnserie.lin)
+```
+Aquesta serie sembla tenir la mitjana més constant. Mirem si amb aquesta diferenciació en tenim prou o si fent-ne una altre ens millora. Per fer-ho mirem les variances.
+```{r}
+d1d1d12lnserie.lin=diff(d1d12lnserie.lin) #és fer la dif regular de la dif regular de la dif estacional
+plot(d1d1d12lnserie.lin)
+```
+
+```{r}
+var(d12lnserie.lin)
+var(d1d12lnserie.lin)
+var(d1d1d12lnserie.lin)
+```
+
+
+Observem que amb una diferenciació regular ja n'hi ha prou, ja que amb la segona augmenta una mica la variància, així que hi ha una sobrediferenciació. 
+
+La sèrie que ens queda és:
+
+$ W_t = (1-B)(1-B^{12})log(X_t) $ 
+
+Equival a fer el logaritme de la sèrie, una diferenciació d'ordre 12 i una diferenciació d'ordre 1. Igual que amb la sèrie sense linealitzar.
+
+```{r}
+acf(d1d12lnserie.lin, ylim=c(-1, 1), lag.max=72)
+```
+
+L'Acf mostra que ara la sèrie ja és estacionaria, ja que els retards descendeixen ràpidament cap a l'interior de les bandes de confiança.
+
+Representem l'ACF i la PACF per la sèrie transformada:
+
+```{r}
+par(mfrow=c(1,2))
+acf(d1d12lnserie.lin,ylim=c(-1,1),lag.max=72,col=c(2,rep(1,11)),lwd=2)
+pacf(d1d12lnserie.lin,ylim=c(-1,1),lag.max=72,col=c(rep(1,11),2),lwd=2)
+par(mfrow=c(1,1)) 
+```
+Com que tant els primers retards com els retards múltiples de 12 són pràcticament iguals que als ACF i PACF de la sèrie sense linealitzar i són els que hem de tenir en compte per proposar les parts regulars i estacionals dels models respectivament, proposem els mateixos models que amb la sèrie original.
+
+El primer model que provarem és un $ARIMA(2,1,0)(3,1,0)_{12}$, és a dir, AR$(2)$ per la part regular amb una diferenciació regular, i AR$(3)_{12}$ per la part estacional amb una diferenciació estacional de 12.
+
+El segon model és un $ARIMA(0,1,2)(0,1,1)_{12}$, és a dir, MA$(2)$ per la part regular amb una diferenciació regular, i MA$(1)_{12}$ per la part estacional amb una diferenciació estacional de 12.
+
+Estimem els models:
+
+$ARIMA(2,1,0)(3,1,0)_{12}$
+```{r}
+(mod1.lin=arima(d1d12lnserie.lin,order=c(2,0,0),seasonal=list(order=c(3,0,0),period=12)))
+```
+
+Primer, estimem el model amb la sèrie transformada en estacionària, d'aquesta manera obtenim una transformació de la mitjana. Veiem que la mitjana no és significativa, per tant tornarem a estimar el model per a la sèrie original, indicant les diferenciacions en el mètode d'estimació: 
+```{r}
+(mod1.lin=arima(lnserie.lin,order=c(2,1,0),seasonal=list(order=c(3,1,0),period=12)))
+```
+
+Ara verifiquem que tots els coeficients són significatius, ja que |$\frac{\hat{\mu}}{se_\mu}$| > 2. Per tant no en traiem cap.
+
+Ara estimem el segon model:$ARIMA(0,1,2)(0,1,1)_{12}$
+```{r}
+(mod2.lin=arima(d1d12lnserie.lin,order=c(0,0,2),seasonal=list(order=c(0,0,1),period=12)))
+```
+
+Quan estimem el model per a la sèrie transformada veiem que la mitjana no és significativa, per tant ho tornem a fer per la sèrie original
+```{r}
+(mod2.lin=arima(lnserie.lin,order=c(0,1,2),seasonal=list(order=c(0,1,1),period=12)))
+```
+
+Comprovem que tots els coeficients són significatius i per tant no hem d'eliminar cap.
+
+Ara comprovem els residus en cada model.
+
+***Model 1:*** $ARIMA(2,1,0)(3,1,0)_{12}$
+```{r}
+resi1.lin=resid(mod1.lin)
+```
+
+El primer que mirem és si la variància és constant.
+
+Plot dels residus:
+```{r}
+plot(resi1.lin)
+abline(h=0)
+abline(h=c(-3*sd(resi1),3*sd(resi1)),lty=3,col=4)
+```
+
+Marquem les línies de referència i veiem com pràcticament tots els residus es troben dins d'aquest interval. El 99.7% dels residus hauria de trobar-se dins de l'interval, cosa que podem veure que passa en la nostra sèrie. No sobresurt cap valor ja que els atípics ja han sigut tractats.
+
+Plot de l’arrel quadrada del valor absolut dels residus amb ajust suau:
+```{r}
+scatter.smooth(sqrt(abs(resi1.lin)), lpars=list(col=2))
+```
+
+Amb aquest plot veiem l'evolució de l'estimació de la variança. Com la línia és aproximadament horitzontal, considerem que la variància si que és constant.
+
+Ara mirem si podem considerar que els residus provenen d'una distribució normal.
+
+Plot de Normalitat:
+```{r}
+qqnorm(resi1.lin)
+qqline(resi1.lin,col=2,lwd=2)
+```
+
+Histograma amb la corba normal superposada:
+```{r}
+hist(resi1.lin,breaks=20, freq=FALSE)
+curve(dnorm(x, mean=mean(resi1.lin), sd=sd(resi1.lin)), col=2, add=T)
+```
+
+Test de Shapiro-Wilks, on la hipòtesi nul·la és que els residus segueixen una distribució normal:
+```{r}
+shapiro.test(resi1.lin)
+```
+
+Amb totes aquestes dades concluïm que els residus si que provenen d'una distribució normal. En el plot de normalitat observem com les dades s'ajusten bastant a la línia de normalitat. Només es desvien una mica la cua superior. En l'histograma no sembla que s'ajusti del tot bé a la corba de normalitat, però, amb el test de normalitat de Shapiro-Wilks confirmem que els residus si que presenten normalitat, ja que el p-valor és major que 0.05, per tant acceptem la hipòtesi de normalitat. 
+
+A continuació, volem saber si podem considerar que els residus són independents.
+
+Primer representem l'ACF i la PACF dels residus:
+```{r}
+par(mfrow=c(1,2))
+acf(resi1.lin,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)),lwd=2)
+pacf(resi1.lin,ylim=c(-1,1),lag.max=60,col=c(rep(1,11),2),lwd=2)
+par(mfrow=c(1,1))
+```
+
+Amb l'ACF i la PACF sembla que els residus no són independents, ja que hi ha una quantitat important de residus que es sobresurten de les bandes de confiança.
+
+Per confirmar-ho, fem el test de Ljung-Box i representem els p-valors:
+```{r}
+tsdiag(mod1.lin,gof.lag=72)
+```
+
+Quan fem el test de Ljung-Box veiem com hi ha molts residus per sota del 0.05, per tant no podem considerar que els residus siguin independents (soroll blanc).
+
+En resum, pel primer model considerem que els residus tenen variància constant i provenen d'una distribució normal, però no són independents, exactament igual que amb el model sense linealitzar.
+
+**Model 2:** $ARIMA(0,1,2)(0,1,1)_{12}$
+```{r}
+resi2.lin=resid(mod2.lin)
+```
+
+El primer que mirem és si la variància és constant.
+
+Plot dels residus:
+```{r}
+plot(resi2.lin)
+abline(h=0)
+abline(h=c(-3*sd(resi2.lin),3*sd(resi2.lin)),lty=3,col=4)
+```
+
+En aquest primer gràfic veiem com els valors dels residus es troben dins de les bandes de confiança. Hi un valor valors que sobresurten però considerem que són atípics causats per l'aleatorietat.
+
+Plot de l’arrel quadrada del valor absolut dels residus amb ajust suau:
+```{r}
+scatter.smooth(sqrt(abs(resi2.lin)), lpars=list(col=2))
+```
+
+Amb aquest plot veiem l'evolució de l'estimació de la variança. Com la línia és aproximadament horitzontal, considerem que la variància si que és constant.
+
+Ara mirem si podem considerar que els residus provenen d'una distribució normal.
+
+Plot de Normalitat:
+```{r}
+qqnorm(resi2.lin)
+qqline(resi2.lin,col=2,lwd=2)
+```
+
+Histograma amb la corba normal superposada:
+```{r}
+hist(resi2.lin,breaks=20, freq=FALSE)
+curve(dnorm(x, mean=mean(resi2.lin), sd=sd(resi2.lin)), col=2, add=T)
+```
+
+Test de Shapiro-Wilks, on la hipòtesi nul·la és que els residus segueixen una distribució normal:
+```{r}
+shapiro.test(resi2.lin)
+```
+
+Amb aquestes dades concluïm que els residus si que provenen d'una distribució normal. En el plot de normalitat veiem com les dades s'ajusten bastant a la línia de normalitat. Només es desvien una mica les cues, el qual pot ser degut a atípics. L'histograma s'ajusta més o menys a la corba de normalitat. I amb el test de normalitat de Shapiro-Wilks podem confirmar que els residus si que presenten normalitat, ja que el p-valor és major que 0.05, per tant acceptem la hipòtesi de normalitat. 
+
+Per últim, volem saber si els residus són independents.
+
+Primer representem l'ACF i la PACF dels residus:
+```{r}
+par(mfrow=c(1,2))
+acf(resi2.lin,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)),lwd=2)
+pacf(resi2.lin,ylim=c(-1,1),lag.max=60,col=c(rep(1,11),2),lwd=2)
+par(mfrow=c(1,1))
+```
+
+Amb l'ACF i la PACF sembla que els residus no són independents, ja que hi ha una quantitat significant de residus que es sobresurten de les bandes de confiança.
+
+Per confirmar-ho, fem el test de Ljung-Box i representem els p-valors:
+```{r}
+tsdiag(mod2.lin,gof.lag=72)
+```
+
+Quan fem el test de Ljung-Box veiem com hi ha molts residus per sota del 0.05, per tant no podem considerar que els residus siguin independents (soroll blanc).
+
+En resum, pel segon model concluïm que els residus tenen variància constant i provenen d'una distribució normal, però no són independents, igual que en el model 1 i que en els models sense linealitzar.
+
+
+Ara portem a terme la validació
+**Model 1:** $ARIMA(2,1,0)(3,1,0)_{12}$
+Ara volem veure si és estacionari i/o invertible busquem les arrels dels polinomis característics:
+```{r}
+Mod(polyroot(c(1,-mod1.lin$model$phi))) # part AR
+Mod(polyroot(c(1,mod1.lin$model$theta))) # part MA
+```
+
+Com totes les arrels del polinomi característic de la part AR són majors que 1, sabem que el model és estacionari (causal). En el cas de la part MA, les arrels no són majors que 1, per tant el model no és invertible. **REPASAR ESTO**
+
+Finalment calculem les mesures d'adequació a les dades (AIC i BIC:
+```{r}
+AIC(mod1.lin)
+BIC(mod1.lin)
+```
+
+
+**Model 2:** $ARIMA(0,1,2)(0,1,1)_{12}$
+
+Ara volem veure si és estacionari i/o invertible busquem les arrels dels polinomis característics:
+```{r}
+Mod(polyroot(c(1,-mod2.lin$model$phi))) # part AR
+Mod(polyroot(c(1,mod2.lin$model$theta))) # part MA
+```
+
+Com totes les arrels del polinomi característic de la part MA són majors que 1, sabem que el model és invertible. En el cas de la part AR, les arrels no són majors que 1, per tant el model no és estacionari (causal).**REPASAR**
+
+Finalment calculem les mesures d'adequació a les dades (AIC i BIC:
+```{r}
+AIC(mod2.lin)
+BIC(mod2.lin)
+```
+
+
