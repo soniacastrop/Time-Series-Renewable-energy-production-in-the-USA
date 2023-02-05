@@ -1,5 +1,5 @@
 # Time-Series-Renewable-energy-production-in-the-USA
-1. Identification: Transform the time serie in a stationary serie if needed.
+1. Identification: Transform the time serie in a stationary serie.
 2. Analyze the ACF and PACF of the series to identify at least two possible models.
 3. Estimate two of the identified models.
 4. Carry out the complete Residue Analysis.
